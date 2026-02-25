@@ -28,7 +28,14 @@ skills/
 ### Installation
 
 ```bash
+# Install all skills
 npx skills add victoralbino/agent-skills
+
+# Install a specific skill
+npx skills add victoralbino/agent-skills@laravel-domain-architecture
+
+# List available skills without installing
+npx skills add victoralbino/agent-skills --list
 ```
 
 ---
@@ -57,5 +64,12 @@ skills/
 ### Instalação
 
 ```bash
+# Instalar todas as skills
 npx skills add victoralbino/agent-skills
+
+# Instalar uma skill específica
+npx skills add victoralbino/agent-skills@laravel-domain-architecture
+
+# Listar skills disponíveis sem instalar
+npx skills add victoralbino/agent-skills --list
 ```

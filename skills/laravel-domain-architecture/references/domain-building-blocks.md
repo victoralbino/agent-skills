@@ -383,7 +383,7 @@ $invoice->invoiceLines->creditLines()->totalPrice();
 ## Enums with Behavior
 
 Instead of the state pattern with abstract and concrete classes (which requires packages or lots of
-boilerplate), use PHP 8.1 enums with methods. Covers 80% of cases with zero overhead:
+boilerplate), use PHP 8.3+ enums with methods. Covers 80% of cases with zero overhead:
 
 ### Complete Enum
 

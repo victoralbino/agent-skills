@@ -189,7 +189,7 @@ Rules:
 
 ## Core Principles
 
-1. **Data Objects** — Never pass loose arrays. Use typed `readonly` classes (pure PHP 8.2). Validation stays in `FormRequest`.
+1. **Data Objects** — Never pass loose arrays. Use typed `readonly` classes (pure PHP 8.3+). Validation stays in `FormRequest`.
 2. **Actions** — Classes with an `execute()` method. Represent user stories. Compose via constructor injection. Primary place for business logic.
 3. **Lean Models** — Only relationships, casts, custom QueryBuilders, and custom Collections. No business logic.
 4. **Enums with methods** — Replace the state pattern in most cases. Include `color()`, `label()`, `canTransitionTo()` directly in the enum. Transitions are done via Actions.

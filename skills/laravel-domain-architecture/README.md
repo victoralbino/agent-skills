@@ -28,7 +28,7 @@ For simple CRUD, stick with Laravel defaults.
 
 ### Key Concepts
 
-- **Data Objects** — Typed DTOs with pure PHP 8.2
+- **Data Objects** — Typed DTOs with pure PHP 8.3+
 - **Actions** — Classes with `execute()` method for business logic
 - **Lean Models** — Only relationships, casts, and query builders
 - **Enums with behavior** — Replace the state pattern in most cases
@@ -39,6 +39,10 @@ For simple CRUD, stick with Laravel defaults.
 ### Installation
 
 ```bash
+# Install this skill only
+npx skills add victoralbino/agent-skills@laravel-domain-architecture
+
+# Or install all skills from the repo
 npx skills add victoralbino/agent-skills
 ```
 
@@ -68,7 +72,7 @@ Para CRUD simples, mantenha os padrões do Laravel.
 
 ### Conceitos Principais
 
-- **Data Objects** — DTOs tipados com PHP 8.2 puro
+- **Data Objects** — DTOs tipados com PHP 8.3+ puro
 - **Actions** — Classes com método `execute()` para lógica de negócio
 - **Models enxutos** — Apenas relacionamentos, casts e query builders
 - **Enums com comportamento** — Substituem o state pattern na maioria dos casos
@@ -79,5 +83,9 @@ Para CRUD simples, mantenha os padrões do Laravel.
 ### Instalação
 
 ```bash
+# Instalar apenas esta skill
+npx skills add victoralbino/agent-skills@laravel-domain-architecture
+
+# Ou instalar todas as skills do repo
 npx skills add victoralbino/agent-skills
 ```
