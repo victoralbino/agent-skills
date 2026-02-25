@@ -1,13 +1,30 @@
 # Laravel Domain Architecture
 
-> [Leia em Português](#português) | [Read in English](#english)
+> [Leia em Portugues](#portugues) | [Read in English](#english)
 
 ---
 
 ## English
 
 Pragmatic domain-oriented architecture for Laravel, based on "Laravel Beyond CRUD" (Spatie).
-Works with pure PHP and native Laravel features — no mandatory external packages.
+Works with pure PHP and native Laravel features — no mandatory external packages, no custom autoload.
+
+### Philosophy
+
+**Don't fight the framework.** Everything stays inside `app/` with standard Laravel namespaces.
+The only addition is a `Domain/` folder for business logic:
+
+```
+app/
+├── Domain/          # Business logic grouped by concept
+│   ├── Invoice/
+│   ├── Customer/
+│   └── Shared/
+├── Http/            # Standard Laravel (Controllers, Requests, Resources)
+├── Jobs/
+├── Providers/
+└── Console/
+```
 
 ### Structure
 
@@ -18,7 +35,7 @@ skills/laravel-domain-architecture/
 ├── README.md                               # This file
 └── references/
     ├── domain-building-blocks.md           # Data Objects, Actions, Models, Enums, QueryBuilders
-    └── application-layer.md                # Controllers, ViewModels, HTTP Queries, Jobs, API Versioning
+    └── application-layer.md                # Controllers, Requests, Resources, HTTP Queries, Jobs, API Versioning
 ```
 
 ### When to Use
@@ -28,13 +45,14 @@ For simple CRUD, stick with Laravel defaults.
 
 ### Key Concepts
 
-- **Data Objects** — Typed DTOs with pure PHP 8.3+
+- **Domain folders** — Flat by default, subfolders only when needed (15+ files)
 - **Actions** — Classes with `execute()` method for business logic
+- **Data Objects** — Typed DTOs only when justified (multiple sources, reuse across contexts)
 - **Lean Models** — Only relationships, casts, and query builders
 - **Enums with behavior** — Replace the state pattern in most cases
-- **ViewModels** — Response composition (Blade and API)
-- **Domain/App separation** — Code by business meaning, not by technical type
-- **API Versioning** — Only at the application layer; domain stays shared
+- **Standard app layer** — Controllers, Requests, Resources in standard Laravel locations
+- **Pragmatic cross-domain** — Models/enums: direct import. Side effects: events. Orchestration: direct call.
+- **API Versioning** — Only when breaking changes happen; don't version preemptively
 
 ### Installation
 
@@ -48,39 +66,57 @@ npx skills add victoralbino/agent-skills
 
 ---
 
-## Português
+## Portugues
 
-Arquitetura pragmática orientada a domínios para Laravel, baseada em "Laravel Beyond CRUD" (Spatie).
-Funciona com PHP puro e recursos nativos do Laravel — sem pacotes externos obrigatórios.
+Arquitetura pragmatica orientada a dominios para Laravel, baseada em "Laravel Beyond CRUD" (Spatie).
+Funciona com PHP puro e recursos nativos do Laravel — sem pacotes externos, sem autoload customizado.
+
+### Filosofia
+
+**Nao lute contra o framework.** Tudo fica dentro de `app/` com namespaces padrao do Laravel.
+A unica adicao e uma pasta `Domain/` para a logica de negocio:
+
+```
+app/
+├── Domain/          # Logica de negocio agrupada por conceito
+│   ├── Invoice/
+│   ├── Customer/
+│   └── Shared/
+├── Http/            # Laravel padrao (Controllers, Requests, Resources)
+├── Jobs/
+├── Providers/
+└── Console/
+```
 
 ### Estrutura
 
 ```
 skills/laravel-domain-architecture/
-├── SKILL.md                                # Instruções para o agente
+├── SKILL.md                                # Instrucoes para o agente
 ├── metadata.json                           # Metadata da skill
 ├── README.md                               # Este arquivo
 └── references/
     ├── domain-building-blocks.md           # Data Objects, Actions, Models, Enums, QueryBuilders
-    └── application-layer.md                # Controllers, ViewModels, HTTP Queries, Jobs, Versionamento de API
+    └── application-layer.md                # Controllers, Requests, Resources, HTTP Queries, Jobs, Versionamento de API
 ```
 
 ### Quando Usar
 
-Projetos Laravel maiores que a média (50+ models, múltiplos devs, vida útil de anos).
-Para CRUD simples, mantenha os padrões do Laravel.
+Projetos Laravel maiores que a media (50+ models, multiplos devs, vida util de anos).
+Para CRUD simples, mantenha os padroes do Laravel.
 
 ### Conceitos Principais
 
-- **Data Objects** — DTOs tipados com PHP 8.3+ puro
-- **Actions** — Classes com método `execute()` para lógica de negócio
+- **Pastas de dominio** — Flat por padrao, subpastas so quando necessario (15+ arquivos)
+- **Actions** — Classes com metodo `execute()` para logica de negocio
+- **Data Objects** — DTOs tipados so quando justifica (multiplas fontes, reuso entre contextos)
 - **Models enxutos** — Apenas relacionamentos, casts e query builders
 - **Enums com comportamento** — Substituem o state pattern na maioria dos casos
-- **ViewModels** — Composição de respostas (Blade e API)
-- **Separação Domain/App** — Código por significado de negócio, não por tipo técnico
-- **Versionamento de API** — Apenas na camada de aplicação; domínio é compartilhado
+- **App layer padrao** — Controllers, Requests, Resources nos locais padrao do Laravel
+- **Cross-domain pragmatico** — Models/enums: import direto. Efeitos colaterais: events. Orquestracao: chamada direta.
+- **Versionamento de API** — So quando ha breaking changes; nao versione preventivamente
 
-### Instalação
+### Instalacao
 
 ```bash
 # Instalar apenas esta skill

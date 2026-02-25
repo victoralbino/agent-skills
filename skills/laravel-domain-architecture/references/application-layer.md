@@ -1,6 +1,6 @@
 ---
 title: Application Layer
-scope: Controllers, ViewModels (Blade and API), HTTP Queries, Jobs, Requests, Resources, API Versioning
+scope: Controllers, Requests, Resources, HTTP Queries, ViewModels (Blade and API), Jobs, API Versioning
 ---
 
 # Application Layer — Detailed Reference
@@ -9,49 +9,84 @@ scope: Controllers, ViewModels (Blade and API), HTTP Queries, Jobs, Requests, Re
 
 1. [Application Structure](#application-structure)
 2. [Controllers](#controllers)
-3. [ViewModels — Blade](#viewmodels--blade)
-4. [ViewModels — API](#viewmodels--api)
-5. [HTTP Query Builders](#http-query-builders)
-6. [Jobs](#jobs)
-7. [Requests and Validation](#requests-and-validation)
-8. [Resources](#resources)
+3. [HTTP Query Builders](#http-query-builders)
+4. [Requests and Validation](#requests-and-validation)
+5. [Resources](#resources)
+6. [ViewModels — API](#viewmodels--api)
+7. [ViewModels — Blade](#viewmodels--blade)
+8. [Jobs](#jobs)
 9. [API Versioning](#api-versioning)
 
 ---
 
 ## Application Structure
 
-Each "application" is a separate entry point for the domain: Admin panel, API, Customer portal,
-Console. Within each application, code is grouped by **business module**, not by technical type.
+The application layer uses **standard Laravel structure**. No custom directories, no custom
+namespaces. Group by domain within each folder only when it grows large.
+
+### Starting Structure (small-medium project)
 
 ```
-src/App/Api/
-├── Invoices/                       ← One module per business concept
-│   ├── Controllers/
-│   │   ├── InvoicesController.php
-│   │   └── InvoiceStatusController.php
-│   ├── Requests/
-│   │   └── StoreInvoiceRequest.php
-│   ├── Resources/
+app/Http/
+├── Controllers/
+│   ├── Api/
+│   │   ├── InvoiceController.php
+│   │   ├── CustomerController.php
+│   │   └── PaymentController.php
+│   └── Web/
+│       └── InvoiceController.php
+├── Requests/
+│   ├── StoreInvoiceRequest.php
+│   ├── UpdateInvoiceRequest.php
+│   └── StoreCustomerRequest.php
+├── Resources/
+│   ├── InvoiceResource.php
+│   ├── InvoiceLineResource.php
+│   └── CustomerResource.php
+├── Queries/
+│   └── InvoiceIndexQuery.php
+├── ViewModels/
+│   └── InvoiceDetailViewModel.php
+└── Middleware/
+```
+
+### Grown Structure (large project)
+
+When folders accumulate 15+ files, group by domain:
+
+```
+app/Http/
+├── Controllers/
+│   ├── Api/
+│   │   ├── Invoice/
+│   │   │   ├── InvoiceController.php
+│   │   │   └── InvoiceStatusController.php
+│   │   ├── Customer/
+│   │   │   └── CustomerController.php
+│   │   └── Payment/
+│   │       └── PaymentController.php
+│   └── Web/
+│       └── InvoiceController.php
+├── Requests/
+│   ├── Invoice/
+│   │   ├── StoreInvoiceRequest.php
+│   │   └── UpdateInvoiceRequest.php
+│   └── Customer/
+│       └── StoreCustomerRequest.php
+├── Resources/
+│   ├── Invoice/
 │   │   ├── InvoiceResource.php
 │   │   └── InvoiceLineResource.php
-│   ├── ViewModels/
-│   │   └── InvoiceDetailViewModel.php
-│   ├── Queries/
-│   │   └── InvoiceIndexQuery.php
-│   └── Middleware/
-│       └── EnsureValidInvoiceSettingsMiddleware.php
-├── Customers/
-│   └── ...
-└── Support/
-    ├── Controllers/
-    │   └── BaseController.php
-    └── Middleware/
-        └── EnsureAuthenticated.php
+│   └── Customer/
+│       └── CustomerResource.php
+├── Queries/
+│   └── InvoiceIndexQuery.php
+├── ViewModels/
+│   └── InvoiceDetailViewModel.php
+└── Middleware/
 ```
 
-Grouping by module avoids the problem of having a `Controllers/` directory with 100+ files.
-When working on billing, everything you need is in one folder.
+Grouping by domain avoids the problem of having a `Controllers/` directory with 100+ files.
 
 ---
 
@@ -60,17 +95,19 @@ When working on billing, everything you need is in one folder.
 Controllers should be thin — they receive input, delegate to domain actions, and return output.
 They belong to the app layer because they know about HTTP, but should not contain business logic.
 
-### Thin Controller with Action
+### Standard Controller
 
 ```php
-namespace App\Api\Invoices\Controllers;
+namespace App\Http\Controllers\Api;
 
-use Domain\Invoices\Actions\CreateInvoiceAction;
-use Domain\Invoices\Data\InvoiceData;
-use App\Api\Invoices\Requests\StoreInvoiceRequest;
-use App\Api\Invoices\Resources\InvoiceResource;
+use App\Domain\Invoice\CreateInvoiceAction;
+use App\Domain\Invoice\Invoice;
+use App\Domain\Invoice\InvoiceData;
+use App\Http\Queries\InvoiceIndexQuery;
+use App\Http\Requests\StoreInvoiceRequest;
+use App\Http\Resources\InvoiceResource;
 
-class InvoicesController
+class InvoiceController
 {
     public function index(InvoiceIndexQuery $query)
     {
@@ -89,12 +126,9 @@ class InvoicesController
 
     public function show(Invoice $invoice)
     {
-        $viewModel = new InvoiceDetailViewModel(
-            invoice: $invoice->load(['invoiceLines', 'payments']),
-            user: auth()->user(),
+        return new InvoiceResource(
+            $invoice->load(['invoiceLines', 'payments'])
         );
-
-        return response()->json($viewModel->toResponse());
     }
 }
 ```
@@ -104,69 +138,249 @@ class InvoicesController
 For operations that are not CRUD, use invokable controllers:
 
 ```php
+namespace App\Http\Controllers\Api;
+
+use App\Domain\Invoice\Invoice;
+use App\Domain\Invoice\MarkInvoiceAsPaidAction;
+use App\Http\Resources\InvoiceResource;
+
 class MarkInvoiceAsPaidController
 {
     public function __invoke(Invoice $invoice, MarkInvoiceAsPaidAction $action)
     {
-        $invoice = $action->execute($invoice);
+        return new InvoiceResource(
+            $action->execute($invoice)
+        );
+    }
+}
+```
 
-        return new InvoiceResource($invoice);
+### Controller with ViewModel (complex response)
+
+When the response combines data from multiple sources, use a ViewModel:
+
+```php
+public function show(Invoice $invoice)
+{
+    $viewModel = new InvoiceDetailViewModel(
+        invoice: $invoice->load(['invoiceLines', 'payments']),
+        user: auth()->user(),
+    );
+
+    return response()->json($viewModel->toResponse());
+}
+```
+
+---
+
+## HTTP Query Builders
+
+For listings with filters, sorting, and pagination, extract the query logic into a dedicated class.
+No packages — use Eloquent's native `when()`:
+
+### Dedicated Query Class
+
+```php
+namespace App\Http\Queries;
+
+use App\Domain\Invoice\Invoice;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
+
+class InvoiceIndexQuery
+{
+    public function __construct(
+        private Request $request,
+    ) {}
+
+    public function build(): Builder
+    {
+        return Invoice::query()
+            ->with(['customer', 'invoiceLines'])
+            ->when(
+                $this->request->get('status'),
+                fn (Builder $q, string $status) => $q->where('status', $status),
+            )
+            ->when(
+                $this->request->get('customer_id'),
+                fn (Builder $q, int $id) => $q->where('customer_id', $id),
+            )
+            ->when(
+                $this->request->get('search'),
+                fn (Builder $q, string $search) => $q->where('number', 'like', "%{$search}%"),
+            )
+            ->when(
+                $this->request->get('overdue'),
+                fn (Builder $q) => $q->whereOverdue(), // uses the domain's custom QueryBuilder
+            )
+            ->orderBy(
+                $this->request->get('sort', 'due_date'),
+                $this->request->get('direction', 'desc'),
+            );
+    }
+}
+```
+
+### Using in the Controller
+
+```php
+class InvoiceController
+{
+    public function index(InvoiceIndexQuery $query)
+    {
+        return InvoiceResource::collection(
+            $query->build()->paginate()
+        );
+    }
+}
+```
+
+The `Request` is automatically injected by the container. The controller stays clean.
+
+### Reuse with Refinement
+
+The same query can be refined by different controllers:
+
+```php
+class PaidInvoiceController
+{
+    public function index(InvoiceIndexQuery $query)
+    {
+        return InvoiceResource::collection(
+            $query->build()
+                ->wherePaid()  // method from the domain's InvoiceQueryBuilder
+                ->paginate()
+        );
+    }
+}
+```
+
+### With Joins for Complex Filters
+
+```php
+class InvoiceIndexQuery
+{
+    public function __construct(private Request $request) {}
+
+    public function build(): Builder
+    {
+        return Invoice::query()
+            ->join('customers', 'customers.id', '=', 'invoices.customer_id')
+            ->select('invoices.*')
+            ->when(
+                $this->request->get('search'),
+                fn (Builder $q, string $search) => $q->where(function (Builder $q) use ($search) {
+                    $q->where('invoices.number', 'like', "%{$search}%")
+                      ->orWhere('customers.name', 'like', "%{$search}%")
+                      ->orWhere('customers.email', 'like', "%{$search}%");
+                }),
+            )
+            ->orderBy(
+                $this->request->get('sort', 'invoices.due_date'),
+                $this->request->get('direction', 'desc'),
+            );
     }
 }
 ```
 
 ---
 
-## ViewModels — Blade
+## Requests and Validation
 
-For applications with Blade, ViewModels implement `Arrayable` and group everything the view needs.
+Use standard Laravel Form Requests:
 
 ```php
-namespace App\Admin\Invoices\ViewModels;
+namespace App\Http\Requests;
 
-use Illuminate\Contracts\Support\Arrayable;
+use App\Domain\Invoice\Invoice;
+use Illuminate\Foundation\Http\FormRequest;
 
-class InvoiceFormViewModel implements Arrayable
+class StoreInvoiceRequest extends FormRequest
 {
-    public function __construct(
-        private User $user,
-        private ?Invoice $invoice = null,
-    ) {}
+    public function authorize(): bool
+    {
+        return $this->user()->can('create', Invoice::class);
+    }
 
-    public function toArray(): array
+    public function rules(): array
     {
         return [
-            'invoice' => $this->invoice ?? new Invoice(),
-            'categories' => Category::allowedForUser($this->user)->get(),
-            'statuses' => InvoiceStatus::cases(),
-            'customers' => Customer::active()->get(),
+            'number' => ['required', 'string', 'max:50', 'unique:invoices,number'],
+            'customer_email' => ['required', 'email'],
+            'due_date' => ['required', 'date', 'after:today'],
+            'lines' => ['required', 'array', 'min:1'],
+            'lines.*.description' => ['required', 'string', 'max:255'],
+            'lines.*.amount' => ['required', 'integer', 'min:1'],
+            'lines.*.price' => ['required', 'integer'],
+            'lines.*.vat_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
         ];
     }
 }
 ```
 
-In the controller:
+The request validates and sanitizes. The domain Data Object receives already-validated data via
+`InvoiceData::fromRequest($request)`.
+
+---
+
+## Resources
+
+API Resources transform models/data for HTTP output:
 
 ```php
-public function create()
+namespace App\Http\Resources;
+
+use Illuminate\Http\Resources\Json\JsonResource;
+
+class InvoiceResource extends JsonResource
 {
-    return view('invoices.form', new InvoiceFormViewModel(current_user()));
+    public function toArray($request): array
+    {
+        return [
+            'id' => $this->id,
+            'number' => $this->number,
+            'status' => [
+                'value' => $this->status->value,
+                'label' => $this->status->label(),
+                'color' => $this->status->color(),
+            ],
+            'total_price' => $this->total_price,
+            'due_date' => $this->due_date->format('Y-m-d'),
+            'paid_at' => $this->paid_at?->format('Y-m-d H:i:s'),
+            'customer_email' => $this->customer_email,
+            'lines' => InvoiceLineResource::collection(
+                $this->whenLoaded('invoiceLines')
+            ),
+            'created_at' => $this->created_at->format('Y-m-d H:i:s'),
+        ];
+    }
 }
 
-public function edit(Invoice $invoice)
+class InvoiceLineResource extends JsonResource
 {
-    return view('invoices.form', new InvoiceFormViewModel(current_user(), $invoice));
+    public function toArray($request): array
+    {
+        return [
+            'id' => $this->id,
+            'description' => $this->description,
+            'amount' => $this->amount,
+            'item_price' => $this->item_price,
+            'total_price' => $this->total_price,
+            'total_price_excluding_vat' => $this->total_price_excluding_vat,
+        ];
+    }
 }
 ```
 
-In Blade, use the variables directly (`$invoice`, `$categories`, `$statuses`).
+For simple endpoints, the Resource is usually enough. Use ViewModels only when
+composing data from multiple sources.
 
 ---
 
 ## ViewModels — API
 
-In API, ViewModels have a different role: **they compose JSON responses when the endpoint returns data
-from multiple sources** (model + permissions + metadata + calculated data).
+Use ViewModels **only when the response combines data from multiple sources** (model + permissions +
+metadata + calculated data). For single-model responses, use Resources directly.
 
 ### When to Use ViewModel in API
 
@@ -179,12 +393,12 @@ from multiple sources** (model + permissions + metadata + calculated data).
 ### Implementation
 
 ```php
-namespace App\Api\Invoices\ViewModels;
+namespace App\Http\ViewModels;
 
-use App\Api\Invoices\Resources\InvoiceResource;
-use App\Api\Invoices\Resources\InvoiceLineResource;
-use Domain\Invoices\Enums\InvoiceStatus;
-use Domain\Invoices\Models\Invoice;
+use App\Domain\Invoice\Invoice;
+use App\Domain\Invoice\InvoiceStatus;
+use App\Http\Resources\InvoiceResource;
+use App\Http\Resources\InvoiceLineResource;
 use App\Models\User;
 
 class InvoiceDetailViewModel
@@ -252,127 +466,54 @@ public function show(Invoice $invoice)
 }
 ```
 
-### Alternative Naming
-
-The name "ViewModel" can be confusing in an API context. Valid alternatives:
-
-- `InvoiceDetailResponse`
-- `InvoiceDetailComposer`
-- `InvoiceDetailPresenter`
-
-The concept is the same: a class that joins data from different sources into a cohesive structure.
-
 ---
 
-## HTTP Query Builders
+## ViewModels — Blade
 
-For listings with filters, sorting, and pagination, extract the query logic into a dedicated class.
-No packages — use Eloquent's native `when()`:
-
-### Dedicated Query Class
+For applications with Blade, ViewModels implement `Arrayable` and group everything the view needs.
 
 ```php
-namespace App\Api\Invoices\Queries;
+namespace App\Http\ViewModels;
 
-use Domain\Invoices\Models\Invoice;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Http\Request;
+use App\Domain\Customer\Customer;
+use App\Domain\Invoice\Invoice;
+use App\Domain\Invoice\InvoiceStatus;
+use Illuminate\Contracts\Support\Arrayable;
 
-class InvoiceIndexQuery
+class InvoiceFormViewModel implements Arrayable
 {
     public function __construct(
-        private Request $request,
+        private User $user,
+        private ?Invoice $invoice = null,
     ) {}
 
-    public function build(): Builder
+    public function toArray(): array
     {
-        return Invoice::query()
-            ->with(['customer', 'invoiceLines'])
-            ->when(
-                $this->request->get('status'),
-                fn (Builder $q, string $status) => $q->where('status', $status),
-            )
-            ->when(
-                $this->request->get('customer_id'),
-                fn (Builder $q, int $id) => $q->where('customer_id', $id),
-            )
-            ->when(
-                $this->request->get('search'),
-                fn (Builder $q, string $search) => $q->where('number', 'like', "%{$search}%"),
-            )
-            ->when(
-                $this->request->get('overdue'),
-                fn (Builder $q) => $q->whereOverdue(), // uses the domain's custom QueryBuilder
-            )
-            ->orderBy(
-                $this->request->get('sort', 'due_date'),
-                $this->request->get('direction', 'desc'),
-            );
+        return [
+            'invoice' => $this->invoice ?? new Invoice(),
+            'categories' => Category::allowedForUser($this->user)->get(),
+            'statuses' => InvoiceStatus::cases(),
+            'customers' => Customer::active()->get(),
+        ];
     }
 }
 ```
 
-### Using in the Controller
+In the controller:
 
 ```php
-class InvoicesController
+public function create()
 {
-    public function index(InvoiceIndexQuery $query)
-    {
-        return InvoiceResource::collection(
-            $query->build()->paginate()
-        );
-    }
+    return view('invoices.form', new InvoiceFormViewModel(current_user()));
+}
+
+public function edit(Invoice $invoice)
+{
+    return view('invoices.form', new InvoiceFormViewModel(current_user(), $invoice));
 }
 ```
 
-The `Request` is automatically injected by the container. The controller stays clean.
-
-### Reuse with Refinement
-
-The same query can be refined by different controllers:
-
-```php
-class PaidInvoicesController
-{
-    public function index(InvoiceIndexQuery $query)
-    {
-        return InvoiceResource::collection(
-            $query->build()
-                ->wherePaid()  // method from the domain's InvoiceQueryBuilder
-                ->paginate()
-        );
-    }
-}
-```
-
-### With Joins for Complex Filters
-
-```php
-class InvoiceIndexQuery
-{
-    public function __construct(private Request $request) {}
-
-    public function build(): Builder
-    {
-        return Invoice::query()
-            ->join('customers', 'customers.id', '=', 'invoices.customer_id')
-            ->select('invoices.*')
-            ->when(
-                $this->request->get('search'),
-                fn (Builder $q, string $search) => $q->where(function (Builder $q) use ($search) {
-                    $q->where('invoices.number', 'like', "%{$search}%")
-                      ->orWhere('customers.name', 'like', "%{$search}%")
-                      ->orWhere('customers.email', 'like', "%{$search}%");
-                }),
-            )
-            ->orderBy(
-                $this->request->get('sort', 'invoices.due_date'),
-                $this->request->get('direction', 'desc'),
-            );
-    }
-}
-```
+In Blade, use the variables directly (`$invoice`, `$categories`, `$statuses`).
 
 ---
 
@@ -384,10 +525,10 @@ Jobs belong to the app layer because their responsibility is managing queue infr
 ### Standard Job
 
 ```php
-namespace App\Api\Invoices\Jobs;
+namespace App\Jobs;
 
-use Domain\Invoices\Actions\SendInvoiceMailAction;
-use Domain\Invoices\Models\Invoice;
+use App\Domain\Invoice\Invoice;
+use App\Domain\Invoice\SendInvoiceMailAction;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -428,132 +569,42 @@ generic 10-line job is enough.
 
 ---
 
-## Requests and Validation
-
-Use standard Laravel Form Requests in the app layer:
-
-```php
-namespace App\Api\Invoices\Requests;
-
-use Illuminate\Foundation\Http\FormRequest;
-
-class StoreInvoiceRequest extends FormRequest
-{
-    public function authorize(): bool
-    {
-        return $this->user()->can('create', Invoice::class);
-    }
-
-    public function rules(): array
-    {
-        return [
-            'number' => ['required', 'string', 'max:50', 'unique:invoices,number'],
-            'customer_email' => ['required', 'email'],
-            'due_date' => ['required', 'date', 'after:today'],
-            'lines' => ['required', 'array', 'min:1'],
-            'lines.*.description' => ['required', 'string', 'max:255'],
-            'lines.*.amount' => ['required', 'integer', 'min:1'],
-            'lines.*.price' => ['required', 'integer'],
-            'lines.*.vat_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
-        ];
-    }
-}
-```
-
-The request validates and sanitizes. The domain Data Object receives already-validated data via
-`InvoiceData::fromRequest($request)`.
-
----
-
-## Resources
-
-API Resources transform models/data for HTTP output. They live in the application module.
-
-```php
-namespace App\Api\Invoices\Resources;
-
-use Illuminate\Http\Resources\Json\JsonResource;
-
-class InvoiceResource extends JsonResource
-{
-    public function toArray($request): array
-    {
-        return [
-            'id' => $this->id,
-            'number' => $this->number,
-            'status' => [
-                'value' => $this->status->value,
-                'label' => $this->status->label(),
-                'color' => $this->status->color(),
-            ],
-            'total_price' => $this->total_price,
-            'due_date' => $this->due_date->format('Y-m-d'),
-            'paid_at' => $this->paid_at?->format('Y-m-d H:i:s'),
-            'customer_email' => $this->customer_email,
-            'lines' => InvoiceLineResource::collection(
-                $this->whenLoaded('invoiceLines')
-            ),
-            'created_at' => $this->created_at->format('Y-m-d H:i:s'),
-        ];
-    }
-}
-
-class InvoiceLineResource extends JsonResource
-{
-    public function toArray($request): array
-    {
-        return [
-            'id' => $this->id,
-            'description' => $this->description,
-            'amount' => $this->amount,
-            'item_price' => $this->item_price,
-            'total_price' => $this->total_price,
-            'total_price_excluding_vat' => $this->total_price_excluding_vat,
-        ];
-    }
-}
-```
-
-Resources map 1:1 with a model. ViewModels compose multiple resources for complex responses.
-
----
-
 ## API Versioning
 
-The API is versioned **only at the application layer**. The domain layer is shared across all
-versions — Actions, Models, and Enums don't change per version.
+**Don't version until you need to.** While there's only one version, no prefix is needed.
 
-### Folder Structure
+### Single Version (no prefix)
 
 ```
-src/App/Api/
-├── V1/
-│   ├── Invoices/
-│   │   ├── Controllers/
-│   │   │   └── InvoicesController.php
-│   │   ├── Requests/
-│   │   │   └── StoreInvoiceRequest.php
-│   │   ├── Resources/
-│   │   │   └── InvoiceResource.php
-│   │   ├── ViewModels/
-│   │   │   └── InvoiceDetailViewModel.php
-│   │   └── Queries/
-│   │       └── InvoiceIndexQuery.php
-│   └── Customers/
-│       └── ...
-├── V2/
-│   └── Invoices/
-│       ├── Controllers/
-│       │   └── InvoicesController.php        ← New controller
-│       ├── Requests/
-│       │   └── StoreInvoiceRequest.php       ← Updated validation
-│       └── Resources/
-│           └── InvoiceResource.php           ← Resource with different fields
-└── Support/
-    ├── Controllers/
-    │   └── BaseController.php
-    └── Middleware/
-        └── EnsureAuthenticated.php
+app/Http/Controllers/Api/InvoiceController.php
+```
+
+```php
+// routes/api.php
+Route::apiResource('invoices', InvoiceController::class);
+```
+
+### When V2 Is Needed
+
+Only create version folders when the first breaking change happens:
+
+```
+app/Http/
+├── Controllers/Api/
+│   ├── V1/
+│   │   └── InvoiceController.php
+│   └── V2/
+│       └── InvoiceController.php
+├── Requests/
+│   ├── V1/
+│   │   └── StoreInvoiceRequest.php
+│   └── V2/
+│       └── StoreInvoiceRequest.php
+└── Resources/
+    ├── V1/
+    │   └── InvoiceResource.php
+    └── V2/
+        └── InvoiceResource.php
 ```
 
 ### Routes per Version
@@ -563,21 +614,20 @@ Create separate route files for each version:
 ```php
 // routes/api_v1.php
 Route::prefix('v1')->group(function () {
-    Route::apiResource('invoices', V1\Invoices\Controllers\InvoicesController::class);
-    Route::apiResource('customers', V1\Customers\Controllers\CustomersController::class);
+    Route::apiResource('invoices', V1\InvoiceController::class);
+    Route::apiResource('customers', CustomerController::class); // didn't change — no V1 prefix
 });
 
 // routes/api_v2.php
 Route::prefix('v2')->group(function () {
-    Route::apiResource('invoices', V2\Invoices\Controllers\InvoicesController::class);
+    Route::apiResource('invoices', V2\InvoiceController::class);
     // Customers didn't change — no need to replicate in V2
 });
 ```
 
-Register in `bootstrap/app.php` or `RouteServiceProvider`:
+Register in `bootstrap/app.php` (Laravel 11+):
 
 ```php
-// bootstrap/app.php (Laravel 11+)
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         api: __DIR__.'/../routes/api_v1.php',
@@ -593,22 +643,20 @@ return Application::configure(basePath: dirname(__DIR__))
 The V2 controller uses the **same domain Actions**, but can have different mapping logic:
 
 ```php
-namespace App\Api\V2\Invoices\Controllers;
+namespace App\Http\Controllers\Api\V2;
 
-use Domain\Invoices\Actions\CreateInvoiceAction;
-use Domain\Invoices\Data\InvoiceData;
-use App\Api\V2\Invoices\Requests\StoreInvoiceRequest;
-use App\Api\V2\Invoices\Resources\InvoiceResource;
+use App\Domain\Invoice\CreateInvoiceAction;
+use App\Domain\Invoice\InvoiceData;
+use App\Http\Requests\V2\StoreInvoiceRequest;
+use App\Http\Resources\V2\InvoiceResource;
 
-class InvoicesController
+class InvoiceController
 {
     public function store(StoreInvoiceRequest $request)
     {
-        // V2 can have different validation and mapping
         $data = InvoiceData::fromRequest($request);
         $invoice = app(CreateInvoiceAction::class)->execute($data);
 
-        // V2 Resource returns different fields
         return new InvoiceResource($invoice);
     }
 }
@@ -616,12 +664,11 @@ class InvoicesController
 
 ### Versioned Resource
 
-The main difference between versions is usually in Resources — fields added, removed,
-or restructured:
+The main difference between versions is usually in Resources:
 
 ```php
 // V1 — original format
-namespace App\Api\V1\Invoices\Resources;
+namespace App\Http\Resources\V1;
 
 class InvoiceResource extends JsonResource
 {
@@ -638,7 +685,7 @@ class InvoiceResource extends JsonResource
 }
 
 // V2 — expanded format
-namespace App\Api\V2\Invoices\Resources;
+namespace App\Http\Resources\V2;
 
 class InvoiceResource extends JsonResource
 {
@@ -663,29 +710,18 @@ class InvoiceResource extends JsonResource
 }
 ```
 
-### Versioning Rules
-
-| Rule | Description |
-|---|---|
-| **Only version what changes** | If V2 only changes Invoices, don't copy Customers to V2 |
-| **Domain is shared** | Actions, Models, Enums, QueryBuilders — same across all versions |
-| **Deprecate, don't delete** | Keep V1 running as long as there are consumers |
-| **Breaking changes = new version** | Field removal, type changes, response restructuring |
-| **Additive changes = same version** | New optional fields, new endpoints, new query params |
-| **Reuse what you can** | V2 can use Queries and ViewModels from V1 if they haven't changed |
-
 ### Reuse Between Versions
 
 When a component doesn't change between versions, reuse it directly:
 
 ```php
-namespace App\Api\V2\Invoices\Controllers;
+namespace App\Http\Controllers\Api\V2;
 
-// V2 uses the same Query from V1 — it didn't change
-use App\Api\V1\Invoices\Queries\InvoiceIndexQuery;
-use App\Api\V2\Invoices\Resources\InvoiceResource;
+// V2 uses the same Query from before — it didn't change
+use App\Http\Queries\InvoiceIndexQuery;
+use App\Http\Resources\V2\InvoiceResource;
 
-class InvoicesController
+class InvoiceController
 {
     public function index(InvoiceIndexQuery $query)
     {
@@ -696,12 +732,38 @@ class InvoicesController
 }
 ```
 
+### Versioning Rules
+
+| Rule | Description |
+|---|---|
+| **Only version what changes** | Don't copy modules that didn't change |
+| **Domain is shared** | Actions, Models, Enums — same across all versions |
+| **Deprecate, don't delete** | Keep V1 running as long as there are consumers |
+| **Breaking changes = new version** | Field removal, type changes, response restructuring |
+| **Additive changes = same version** | New optional fields, new endpoints, new query params |
+| **Reuse what you can** | V2 can use Queries and ViewModels from V1 if unchanged |
+
+### When to Create a New Version
+
+- **Remove fields** from an existing response
+- **Change types** (string -> object, int -> float)
+- **Restructure** the response format (flat -> nested)
+- **Change behavior** of existing endpoints
+- **Remove endpoints**
+
+**Do NOT** create a new version to:
+
+- Add optional fields to the response
+- Create new endpoints
+- Add optional query parameters
+- Fix bugs
+
 ### Deprecation Headers
 
-Signal deprecation of older versions in controllers or middleware:
+Signal deprecation of older versions in middleware:
 
 ```php
-// src/App/Api/Support/Middleware/DeprecatedApiVersion.php
+// app/Http/Middleware/DeprecatedApiVersion.php
 class DeprecatedApiVersion
 {
     public function handle(Request $request, Closure $next, string $sunset): Response
@@ -723,18 +785,3 @@ Route::prefix('v1')
         // ...
     });
 ```
-
-### When to Create a New Version
-
-- **Remove fields** from an existing response
-- **Change types** (string → object, int → float)
-- **Restructure** the response format (flat → nested)
-- **Change behavior** of existing endpoints
-- **Remove endpoints**
-
-**Do NOT** create a new version to:
-
-- Add optional fields to the response
-- Create new endpoints
-- Add optional query parameters
-- Fix bugs

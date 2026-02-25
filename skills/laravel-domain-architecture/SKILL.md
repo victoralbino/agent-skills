@@ -17,14 +17,14 @@ Guide for creating and refactoring Laravel applications using a pragmatic domain
 Based on patterns from "Laravel Beyond CRUD" (Brent Roose / Spatie), **simplified to work with pure PHP
 and native Laravel features — no mandatory external packages**.
 
-Core philosophy: **group code by business meaning, not by technical property**.
+Core philosophy: **group code by business meaning, not by technical property. Don't fight the framework.**
 
 ---
 
 ## Agent Instructions
 
-- When creating or modifying **Domain layer** components (Actions, Data Objects, Models, Enums, QueryBuilders, Collections, Events) → consult `references/domain-building-blocks.md`
-- When creating or modifying **Application layer** components (Controllers, ViewModels, HTTP Queries, Jobs, Requests, Resources, API Versioning) → consult `references/application-layer.md`
+- When creating or modifying **Domain layer** components (Actions, Data Objects, Models, Enums, QueryBuilders, Collections, Events) -> consult `references/domain-building-blocks.md`
+- When creating or modifying **Application layer** components (Controllers, Requests, Resources, Queries, Jobs, API Versioning) -> consult `references/application-layer.md`
 - Do not load both references at once — use only the one relevant to the current task
 - Always follow the naming conventions and anti-patterns listed below
 
@@ -39,195 +39,259 @@ stick with Laravel defaults. The tipping point is when navigating the standard `
 
 ## Project Structure
 
-The architecture separates code into two main layers:
+The architecture adds a `Domain/` layer inside `app/` while keeping the standard Laravel structure
+for everything else. **No custom autoload, no custom Application class.**
 
 ```
-src/
-├── Domain/          ← Business logic (the "what")
-│   ├── Invoices/
-│   ├── Customers/
-│   ├── Payments/
+app/
+├── Domain/                    # Business logic (the "what")
+│   ├── Invoice/
+│   ├── Customer/
+│   ├── Payment/
 │   └── Shared/
-├── App/             ← Infrastructure/HTTP (the "how it's exposed")
-│   ├── Admin/
-│   │   ├── Invoices/
-│   │   └── Customers/
-│   ├── Api/
-│   │   ├── V1/
-│   │   │   ├── Invoices/
-│   │   │   └── Customers/
-│   │   └── V2/
-│   │       └── Invoices/
-│   ├── Console/
-│   └── Providers/
-└── Support/         ← Shared helpers, base classes, utilities
+├── Http/                      # Standard Laravel HTTP layer
+│   ├── Controllers/
+│   │   ├── Api/
+│   │   └── Web/
+│   ├── Requests/
+│   ├── Resources/
+│   ├── Queries/
+│   ├── ViewModels/
+│   └── Middleware/
+├── Jobs/
+├── Listeners/
+├── Notifications/
+├── Providers/
+└── Console/
 ```
 
-### Composer Autoload
+### Domain Folders Are Flat
 
-```json
-{
-    "autoload": {
-        "psr-4": {
-            "App\\": "src/App/",
-            "Domain\\": "src/Domain/",
-            "Support\\": "src/Support/"
-        }
-    }
-}
-```
-
-### Custom Application Class (optional)
-
-```php
-// src/App/Application.php
-namespace App;
-
-class Application extends \Illuminate\Foundation\Application
-{
-    protected $namespace = 'App\\';
-}
-
-// bootstrap/app.php
-$app = (new Application(
-    $_ENV['APP_BASE_PATH'] ?? dirname(__DIR__)
-))->useAppPath('src/App');
-```
-
-> **Simple alternative**: keep `app/` and add `Domain` as a namespace inside it:
-> `app/Domain/`. This is what Spatie does in most projects.
-
----
-
-## Domain Layer
-
-Each domain folder represents a **business concept**:
+Each domain folder contains all its files at the root level. The type is in the class name —
+subfolders are unnecessary until a domain grows beyond ~15 files:
 
 ```
-src/Domain/Invoices/
-├── Actions/              # Business logic (user stories)
-├── Data/                 # Typed DTOs (readonly classes)
-├── Models/               # Lean Eloquent models
-├── QueryBuilders/        # Custom query builders
-├── Collections/          # Custom collections
-├── Enums/                # Enums with behavior
-├── Events/               # Domain events
-├── Exceptions/           # Domain exceptions
-└── Rules/                # Domain validation rules
+app/Domain/Invoice/
+├── Invoice.php                    # Model
+├── InvoiceLine.php                # Model
+├── InvoiceStatus.php              # Enum
+├── InvoiceData.php                # DTO (only when justified)
+├── CreateInvoiceAction.php        # Action
+├── MarkInvoiceAsPaidAction.php    # Action
+├── CancelInvoiceAction.php        # Action
+├── InvoiceQueryBuilder.php        # Custom QueryBuilder
+├── InvoiceLineCollection.php      # Custom Collection
+├── InvoiceCreatedEvent.php        # Event
+└── InvalidTransitionException.php # Exception
 ```
 
-→ Detailed implementation of each block in `references/domain-building-blocks.md`
+When a domain grows large (15+ files), split into subfolders:
+
+```
+app/Domain/Invoice/
+├── Actions/
+│   ├── CreateInvoiceAction.php
+│   ├── MarkInvoiceAsPaidAction.php
+│   └── CancelInvoiceAction.php
+├── Models/
+│   ├── Invoice.php
+│   └── InvoiceLine.php
+├── Enums/
+│   └── InvoiceStatus.php
+├── Data/
+│   └── InvoiceData.php
+└── ...
+```
+
+-> Detailed implementation of each domain block in `references/domain-building-blocks.md`
 
 ---
 
 ## Application Layer
 
-The application layer **consumes** the domain and exposes it to the end user. Group by **business concept**, not by technical type:
+The application layer uses **standard Laravel structure**. Group by domain within each folder
+only when folders grow too large:
 
 ```
-src/App/Api/V1/
-├── Invoices/
-│   ├── Controllers/
-│   ├── Requests/
-│   ├── Resources/
-│   ├── ViewModels/
-│   ├── Queries/
-│   └── Middleware/
-├── Customers/
-└── Support/              # Base controllers, shared middleware
+app/Http/Controllers/Api/
+├── InvoiceController.php       # Fine when there are few controllers
+├── CustomerController.php
+└── PaymentController.php
 ```
+
+When the project grows:
+
+```
+app/Http/Controllers/Api/
+├── Invoice/
+│   ├── InvoiceController.php
+│   └── InvoiceStatusController.php
+├── Customer/
+│   └── CustomerController.php
+└── Payment/
+    └── PaymentController.php
+```
+
+Same principle applies to Requests, Resources, and Queries.
 
 ### API Versioning
 
-The API is versioned at the application layer. The domain **does not change** — only controllers, resources, and requests are versioned:
+Only create version folders when the first breaking change happens. While there's
+one version, no prefix needed:
 
 ```
-src/App/Api/
+app/Http/Controllers/Api/InvoiceController.php    # Single version — no prefix
+```
+
+When V2 is needed:
+
+```
+app/Http/Controllers/Api/
 ├── V1/
-│   └── Invoices/
-│       ├── Controllers/InvoicesController.php
-│       ├── Resources/InvoiceResource.php
-│       └── Requests/StoreInvoiceRequest.php
-├── V2/
-│   └── Invoices/
-│       ├── Controllers/InvoicesController.php    ← New controller
-│       ├── Resources/InvoiceResource.php         ← Resource with different fields
-│       └── Requests/StoreInvoiceRequest.php      ← Updated validation
-└── Support/
+│   └── InvoiceController.php     # Move here only when V2 exists
+└── V2/
+    └── InvoiceController.php
 ```
 
 Rules:
 - **Domain layer is shared** — Actions, Models, Enums are the same across V1 and V2
-- **Only version what changes** — If V2 only changes Invoices, no need to copy Customers
-- **Routes per version** — `routes/api_v1.php`, `routes/api_v2.php` with prefix `api/v1`, `api/v2`
+- **Only version what changes** — If V2 only changes Invoices, don't copy Customers
+- **Routes per version** — `routes/api_v1.php`, `routes/api_v2.php`
 - **Deprecate, don't delete** — Keep V1 running as long as there are consumers
 
-→ Detailed implementation in `references/application-layer.md`
+-> Detailed implementation in `references/application-layer.md`
 
 ---
 
 ## Naming Conventions
 
-| Type | Suffix | Location | Example |
-|---|---|---|---|
-| Action | `*Action` | `Domain/*/Actions/` | `CreateInvoiceAction` |
-| Data Object | `*Data` | `Domain/*/Data/` | `InvoiceData` |
-| Model | — | `Domain/*/Models/` | `Invoice` |
-| QueryBuilder | `*QueryBuilder` | `Domain/*/QueryBuilders/` | `InvoiceQueryBuilder` |
-| Collection | `*Collection` | `Domain/*/Collections/` | `InvoiceLineCollection` |
-| Enum | `*Status` / `*Type` | `Domain/*/Enums/` | `InvoiceStatus` |
-| Event | `*Event` | `Domain/*/Events/` | `InvoiceCreatedEvent` |
-| Exception | `*Exception` | `Domain/*/Exceptions/` | `InvalidInvoiceTransitionException` |
-| Controller | `*Controller` | `App/*/Controllers/` | `InvoicesController` |
-| ViewModel | `*ViewModel` | `App/*/ViewModels/` | `InvoiceDetailViewModel` |
-| HTTP Query | `*IndexQuery` | `App/*/Queries/` | `InvoiceIndexQuery` |
-| Resource | `*Resource` | `App/*/Resources/` | `InvoiceResource` |
-| Request | `Store*Request` / `Update*Request` | `App/*/Requests/` | `StoreInvoiceRequest` |
-| Job | `*Job` | `App/*/Jobs/` | `SendInvoiceMailJob` |
+| Type | Suffix | Example |
+|---|---|---|
+| Action | `*Action` | `CreateInvoiceAction` |
+| Data Object | `*Data` | `InvoiceData` |
+| Model | — | `Invoice` |
+| QueryBuilder | `*QueryBuilder` | `InvoiceQueryBuilder` |
+| Collection | `*Collection` | `InvoiceLineCollection` |
+| Enum | `*Status` / `*Type` | `InvoiceStatus` |
+| Event | `*Event` | `InvoiceCreatedEvent` |
+| Exception | `*Exception` | `InvalidTransitionException` |
+| Controller | `*Controller` | `InvoiceController` |
+| HTTP Query | `*IndexQuery` | `InvoiceIndexQuery` |
+| Resource | `*Resource` | `InvoiceResource` |
+| Request | `Store*Request` / `Update*Request` | `StoreInvoiceRequest` |
+| Job | `*Job` | `SendInvoiceMailJob` |
 
 ---
 
 ## Core Principles
 
-1. **Data Objects** — Never pass loose arrays. Use typed `readonly` classes (pure PHP 8.3+). Validation stays in `FormRequest`.
-2. **Actions** — Classes with an `execute()` method. Represent user stories. Compose via constructor injection. Primary place for business logic.
-3. **Lean Models** — Only relationships, casts, custom QueryBuilders, and custom Collections. No business logic.
+1. **Actions** — Classes with an `execute()` method. Represent user stories. Compose via constructor injection. Primary place for business logic.
+2. **Lean Models** — Only relationships, casts, custom QueryBuilders, and custom Collections. No business logic.
+3. **Data Objects** — Use typed `readonly` classes (pure PHP 8.3+) only when data comes from multiple sources or the Action is reused across contexts. For simple controller -> action flows, passing the Request or individual parameters is fine.
 4. **Enums with methods** — Replace the state pattern in most cases. Include `color()`, `label()`, `canTransitionTo()` directly in the enum. Transitions are done via Actions.
-5. **ViewModels** — Blade: implement `Arrayable`. API: compose JSON responses from multiple sources. For simple endpoints, use Resource directly.
-6. **Jobs are infrastructure** — Manage queues and retries. Business logic stays in Actions called from `handle()`.
+5. **Jobs are infrastructure** — Manage queues and retries. Business logic stays in Actions called from `handle()`.
+6. **Don't fight the framework** — Use standard `app/`, standard namespaces, standard artisan. The only addition is `Domain/`.
 
 ---
 
 ## Cross-Domain Communication
 
-Domains **can** import models and data objects from other domains directly. This architecture is
-pragmatic — it doesn't require interfaces or anti-corruption layers for internal communication.
+Domains communicate pragmatically based on the **nature of the interaction**, not on rigid boundaries.
 
-Rules:
-- **Models can reference models from other domains** in relationships (`Invoice` → `Customer`)
-- **Actions can receive data objects and models from other domains** as parameters
-- **Avoid circular dependencies** — if A depends on B and B depends on A, extract shared logic to `Domain/Shared/`
-- **Domain events** are the preferred mechanism when a domain needs to **react** to something from another domain without direct coupling
-- Use `Domain/Shared/` for cross-cutting concerns (audit log, generic notifications) — keep it small
+### Rules
+
+| Situation | Approach |
+|---|---|
+| Read a model/enum from another domain | Direct import |
+| Validate a precondition from another domain | Direct call |
+| Orchestrate actions atomically (transaction) | Direct call |
+| Side effect (notify, log, sync) | Event |
+| Async reaction (can fail without affecting the flow) | Event |
+| Multiple domains react to the same fact | Event |
+
+### Direct Import (models, enums, preconditions)
+
+```php
+namespace App\Domain\Invoice;
+
+use App\Domain\Customer\Customer;
+
+class CreateInvoiceAction
+{
+    public function execute(InvoiceData $data, Customer $customer): Invoice
+    {
+        if (! $customer->isActive()) {
+            throw new \App\Domain\Customer\InactiveCustomerException();
+        }
+
+        return Invoice::create([
+            'customer_id' => $customer->id,
+            'number' => $data->number,
+        ]);
+    }
+}
+```
+
+### Orchestration (needs the result, must be atomic)
+
+When multiple domains must succeed together, the **app layer** orchestrates:
+
+```php
+class CheckoutController
+{
+    public function store(CheckoutRequest $request)
+    {
+        return DB::transaction(function () use ($request) {
+            $invoice = app(CreateInvoiceAction::class)->execute($invoiceData);
+            $payment = app(ProcessPaymentAction::class)->execute($invoice, $paymentData);
+
+            return new CheckoutResource($invoice, $payment);
+        });
+    }
+}
+```
+
+### Events (side effects, reactions)
+
+```php
+class CreateInvoiceAction
+{
+    public function execute(InvoiceData $data): Invoice
+    {
+        $invoice = Invoice::create([...]);
+        event(new InvoiceCreatedEvent($invoice));
+
+        return $invoice;
+    }
+}
+
+// Another domain reacts via listener — no direct coupling
+class ReconcilePaymentListener
+{
+    public function handle(InvoiceCreatedEvent $event): void
+    {
+        app(ReconcilePaymentAction::class)->execute($event->invoice);
+    }
+}
+```
+
+### What's Prohibited
+
+- **Circular dependencies** — If A calls B and B calls A, extract to `Domain/Shared/` or use events
+- **Side effects disguised as direct calls** — If the caller doesn't need the result, it should be an event
 
 ---
 
 ## Domain Service Providers
 
-Each domain or application **can** have its own ServiceProvider when it needs to register
+Each domain **can** have its own ServiceProvider when it needs to register
 bindings, event listeners, or specific configurations:
 
 ```
-src/App/Providers/
-├── DomainServiceProvider.php       # Registers all domain providers
-├── InvoiceServiceProvider.php      # Bindings and events for Invoices
-└── CustomerServiceProvider.php     # Bindings and events for Customers
+app/Providers/
+├── InvoiceServiceProvider.php
+└── CustomerServiceProvider.php
 ```
-
-Use domain ServiceProviders when:
-- The domain has event listeners to register
-- Actions need custom bindings (e.g., interface → implementation)
-- The domain requires specific boot configurations
 
 For simple domains (no custom bindings), don't create a ServiceProvider — Laravel's auto-discovery
 and auto-injection already handle it.
@@ -236,25 +300,24 @@ and auto-injection already handle it.
 
 ## Anti-patterns
 
-Avoid these patterns when using this architecture:
-
-- **Logic in Models** — Models don't calculate, don't send emails, don't do business validation. That goes in Actions.
-- **Overly generic Actions** — `ProcessInvoiceAction` that does 10 things. Prefer specific actions: `CreateInvoiceAction`, `MarkInvoiceAsPaidAction`.
-- **Repository pattern** — Eloquent already is the repository. Don't create an extra abstraction layer on top of it. Use custom QueryBuilders.
-- **Interfaces for everything** — Only create interfaces when there are multiple real implementations (e.g., payment gateways). For everything else, inject the concrete class.
-- **Giant Domain/Shared** — If `Shared/` grows too large, it probably has code that should be in its own domain.
-- **Copying entire API to new version** — When versioning, only copy the modules that changed. V2 can import Resources from V1 if they haven't changed.
+- **Logic in Models** — Models don't calculate, don't send emails, don't validate business rules. That goes in Actions.
+- **Overly generic Actions** — `ProcessInvoiceAction` that does 10 things. Prefer specific: `CreateInvoiceAction`, `MarkInvoiceAsPaidAction`.
+- **Repository pattern** — Eloquent already is the repository. Use custom QueryBuilders instead.
+- **Interfaces for everything** — Only create interfaces when there are multiple real implementations (e.g., payment gateways).
+- **Giant Domain/Shared** — If `Shared/` grows too large, it has code that should be in its own domain.
+- **DTOs for everything** — Don't create a DTO when the controller just passes 2-3 fields to an Action.
+- **Fighting the framework** — Custom Application class, custom autoload, custom directory structure that breaks artisan. If it requires a hack, rethink the approach.
 
 ---
 
 ## Testing Strategy
 
-- **Data Objects**: Minimal testing — the type system does the heavy lifting
-- **Actions**: The most important tests. Pattern: **setup → execute → assert**
+- **Actions**: The most important tests. Pattern: **setup -> execute -> assert**
 - **Models**: Test custom QueryBuilders and Collections in isolation
 - **Enums**: Test behavior methods and transition rules
+- **Data Objects**: Minimal testing — the type system does the heavy lifting
 
-→ Complete examples of immutable factories and tests in `references/domain-building-blocks.md`
+-> Complete examples in `references/domain-building-blocks.md`
 
 ---
 
@@ -262,11 +325,11 @@ Avoid these patterns when using this architecture:
 
 No need to adopt everything at once. Recommended order:
 
-1. **Data Objects** — Replace arrays with typed DTOs
-2. **Actions** — Extract business logic from controllers and models
-3. **Domains** — Group related code when directories become too large
+1. **Actions** — Extract business logic from controllers and models
+2. **Domain folders** — Group related code when directories become large
+3. **Data Objects** — Replace arrays with typed DTOs where justified
 4. **Enums with methods** — Replace conditionals with behavior in the enum
-5. **Application Layer** — Introduce ViewModels, HTTP Queries, and module grouping
+5. **Custom QueryBuilders** — Extract complex scopes
 6. **API Versioning** — Structure when the API needs breaking changes
 
 Domains can and should change over time. Start pragmatically, refactor as understanding grows.
@@ -276,4 +339,4 @@ Domains can and should change over time. Start pragmatically, refactor as unders
 ## Reference Files
 
 - `references/domain-building-blocks.md` — Data Objects, Actions, Models, Enums, QueryBuilders, Collections, Events, Cross-Domain Communication, Tests
-- `references/application-layer.md` — Controllers, ViewModels (Blade and API), HTTP Queries, Jobs, Requests, Resources, API Versioning
+- `references/application-layer.md` — Controllers, Requests, Resources, HTTP Queries, ViewModels, Jobs, API Versioning

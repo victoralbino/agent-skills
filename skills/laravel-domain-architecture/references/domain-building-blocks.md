@@ -23,13 +23,23 @@ scope: Data Objects, Actions, Models, Enums, QueryBuilders, Collections, Events,
 
 ## Data Objects (DTOs)
 
-Data Objects wrap unstructured data into typed classes, making data predictable and
-self-documenting. They are the entry point for all external data into the domain.
+Data Objects wrap unstructured data into typed classes. Use them **only when justified** —
+not for every action.
+
+### When to Use DTOs
+
+| Situation | Use DTO? |
+|---|---|
+| Action receives data from multiple sources (request + config + computed) | Yes |
+| Action is called from Controller, Job, Console, and tests | Yes |
+| Action receives 5+ parameters | Yes |
+| Controller passes 2-3 fields to an Action | No — use parameters |
+| Action receives a single Model | No — pass the model |
 
 ### Implementation with Pure PHP
 
 ```php
-namespace Domain\Invoices\Data;
+namespace App\Domain\Invoice;
 
 use Carbon\Carbon;
 
@@ -70,6 +80,8 @@ class InvoiceData
 When all fields are primitive types, the spread works directly:
 
 ```php
+namespace App\Domain\Customer;
+
 class CustomerData
 {
     public function __construct(
@@ -80,6 +92,28 @@ class CustomerData
     public static function fromRequest(StoreCustomerRequest $request): self
     {
         return new self(...$request->validated());
+    }
+}
+```
+
+### Without DTO — Direct Parameters
+
+For simple actions, skip the DTO entirely:
+
+```php
+class MarkInvoiceAsPaidAction
+{
+    public function execute(Invoice $invoice): Invoice
+    {
+        // No DTO needed — single model parameter
+    }
+}
+
+class UpdateCustomerEmailAction
+{
+    public function execute(Customer $customer, string $email): Customer
+    {
+        // No DTO needed — model + one field
     }
 }
 ```
@@ -104,7 +138,7 @@ class InvoiceController
 If you want to keep the domain 100% clean from HTTP knowledge:
 
 ```php
-// src/App/Api/Invoices/Factories/InvoiceDataFactory.php
+// app/Http/Factories/InvoiceDataFactory.php
 class InvoiceDataFactory
 {
     public static function fromRequest(StoreInvoiceRequest $request): InvoiceData
@@ -135,16 +169,12 @@ primary place for business logic in the domain.
 - **One public method**: `execute()` (not `handle` to avoid Laravel auto-injection, not `__invoke` for cleaner composition)
 - **Dependencies**: via constructor (container DI)
 - **Input**: via `execute()` parameters (context-specific data)
-- **Location**: `src/Domain/{DomainName}/Actions/`
+- **Location**: `app/Domain/{DomainName}/`
 
 ### Basic Action
 
 ```php
-namespace Domain\Invoices\Actions;
-
-use Domain\Invoices\Data\InvoiceData;
-use Domain\Invoices\Enums\InvoiceStatus;
-use Domain\Invoices\Models\Invoice;
+namespace App\Domain\Invoice;
 
 class CreateInvoiceAction
 {
@@ -175,6 +205,8 @@ class CreateInvoiceAction
 Actions compose via constructor injection. Keep the dependency chain shallow:
 
 ```php
+namespace App\Domain\Invoice;
+
 class CreateInvoiceLineAction
 {
     public function __construct(
@@ -200,10 +232,15 @@ class CreateInvoiceLineAction
 
 ### Dispatching as a Job
 
-Create a normal job that calls the action. No package needed:
+Create a normal job that calls the action:
 
 ```php
-// src/App/Api/Invoices/Jobs/SendInvoiceMailJob.php
+// app/Jobs/SendInvoiceMailJob.php
+namespace App\Jobs;
+
+use App\Domain\Invoice\Invoice;
+use App\Domain\Invoice\SendInvoiceMailAction;
+
 class SendInvoiceMailJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
@@ -230,10 +267,13 @@ Business logic goes elsewhere.
 ### What Belongs in the Model
 
 ```php
-namespace Domain\Invoices\Models;
+namespace App\Domain\Invoice;
 
-use Domain\Invoices\Enums\InvoiceStatus;
-use Domain\Invoices\QueryBuilders\InvoiceQueryBuilder;
+use App\Domain\Customer\Customer;
+use App\Domain\Payment\Payment;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Invoice extends Model
 {
@@ -275,11 +315,11 @@ class Invoice extends Model
 
 ### What Does NOT Belong in the Model
 
-- Price calculations → Actions
-- PDF generation → Actions
-- Email sending → Actions
-- Complex conditional logic → Enums with methods
-- Query filtering beyond simple scopes → Custom QueryBuilders
+- Price calculations -> Actions
+- PDF generation -> Actions
+- Email sending -> Actions
+- Complex conditional logic -> Enums with methods
+- Query filtering beyond simple scopes -> Custom QueryBuilders
 
 ---
 
@@ -288,9 +328,9 @@ class Invoice extends Model
 Extract query scopes into dedicated builder classes. This is a standard Eloquent mechanism:
 
 ```php
-namespace Domain\Invoices\QueryBuilders;
+namespace App\Domain\Invoice;
 
-use Domain\Invoices\Enums\InvoiceStatus;
+use App\Domain\Customer\Customer;
 use Illuminate\Database\Eloquent\Builder;
 
 class InvoiceQueryBuilder extends Builder
@@ -331,9 +371,8 @@ Usage: `Invoice::query()->wherePaid()->whereOverdue()->get()`
 When collection operations are repeated, extract them into a custom class:
 
 ```php
-namespace Domain\Invoices\Collections;
+namespace App\Domain\Invoice;
 
-use Domain\Invoices\Models\InvoiceLine;
 use Illuminate\Database\Eloquent\Collection;
 
 class InvoiceLineCollection extends Collection
@@ -388,7 +427,7 @@ boilerplate), use PHP 8.3+ enums with methods. Covers 80% of cases with zero ove
 ### Complete Enum
 
 ```php
-namespace Domain\Invoices\Enums;
+namespace App\Domain\Invoice;
 
 enum InvoiceStatus: string
 {
@@ -474,6 +513,8 @@ $invoice->status->allowedTransitions(); // [InvoiceStatus::Paid, InvoiceStatus::
 Not every enum needs transitions. Types that never change also benefit:
 
 ```php
+namespace App\Domain\Invoice;
+
 enum InvoiceType: string
 {
     case Debit = 'debit';
@@ -506,18 +547,14 @@ Instead of separate `Transition` classes, use normal Actions. A transition is ju
 business operation:
 
 ```php
-namespace Domain\Invoices\Actions;
-
-use Domain\Invoices\Enums\InvoiceStatus;
-use Domain\Invoices\Exceptions\InvalidInvoiceTransitionException;
-use Domain\Invoices\Models\Invoice;
+namespace App\Domain\Invoice;
 
 class MarkInvoiceAsPaidAction
 {
     public function execute(Invoice $invoice): Invoice
     {
         if (! $invoice->status->canTransitionTo(InvoiceStatus::Paid)) {
-            throw new InvalidInvoiceTransitionException(
+            throw new InvalidTransitionException(
                 from: $invoice->status,
                 to: InvoiceStatus::Paid,
             );
@@ -528,9 +565,6 @@ class MarkInvoiceAsPaidAction
             'paid_at' => now(),
         ]);
 
-        // Transition side effects
-        History::log($invoice, "Status changed to Paid");
-
         return $invoice->refresh();
     }
 }
@@ -540,7 +574,7 @@ class CancelInvoiceAction
     public function execute(Invoice $invoice, string $reason = ''): Invoice
     {
         if (! $invoice->status->canTransitionTo(InvoiceStatus::Cancelled)) {
-            throw new InvalidInvoiceTransitionException(
+            throw new InvalidTransitionException(
                 from: $invoice->status,
                 to: InvoiceStatus::Cancelled,
             );
@@ -552,8 +586,6 @@ class CancelInvoiceAction
             'cancellation_reason' => $reason,
         ]);
 
-        History::log($invoice, "Cancelled: {$reason}");
-
         return $invoice->refresh();
     }
 }
@@ -562,11 +594,9 @@ class CancelInvoiceAction
 ### Transition Exception
 
 ```php
-namespace Domain\Invoices\Exceptions;
+namespace App\Domain\Invoice;
 
-use Domain\Invoices\Enums\InvoiceStatus;
-
-class InvalidInvoiceTransitionException extends \DomainException
+class InvalidTransitionException extends \DomainException
 {
     public function __construct(
         public readonly InvoiceStatus $from,
@@ -583,13 +613,13 @@ class InvalidInvoiceTransitionException extends \DomainException
 
 ## Events
 
-Use events when multiple listeners need to react to the same action. For simple, single
-reactions, the logic can stay in the action itself.
+Use events when multiple listeners need to react to the same action, or when the reaction
+is a side effect that shouldn't couple domains.
 
 ### Custom Event
 
 ```php
-namespace Domain\Invoices\Events;
+namespace App\Domain\Invoice;
 
 class InvoiceCreatedEvent
 {
@@ -618,7 +648,11 @@ class CreateInvoiceAction
 ### Listener in the App Layer
 
 ```php
-// src/App/Api/Invoices/Listeners/SendInvoiceCreatedNotification.php
+// app/Listeners/SendInvoiceCreatedNotification.php
+namespace App\Listeners;
+
+use App\Domain\Invoice\InvoiceCreatedEvent;
+
 class SendInvoiceCreatedNotification
 {
     public function handle(InvoiceCreatedEvent $event): void
@@ -636,24 +670,36 @@ Register in `EventServiceProvider` as usual.
 
 ## Cross-Domain Communication
 
-Domains need to communicate. This architecture is pragmatic — it doesn't require interfaces or
-anti-corruption layers for internal communication.
+Domains communicate pragmatically based on the **nature of the interaction**.
+
+### Rules
+
+| Situation | Approach |
+|---|---|
+| Read a model/enum from another domain | Direct import |
+| Validate a precondition from another domain | Direct call |
+| Orchestrate actions atomically (transaction) | Direct call |
+| Side effect (notify, log, sync) | Event |
+| Async reaction (can fail without affecting the flow) | Event |
+| Multiple domains react to the same fact | Event |
 
 ### Direct Import (default)
 
 The most common case: one domain uses models or data objects from another directly.
 
 ```php
-namespace Domain\Invoices\Actions;
+namespace App\Domain\Invoice;
 
-use Domain\Customers\Models\Customer;  // ← Direct import from another domain
-use Domain\Invoices\Data\InvoiceData;
-use Domain\Invoices\Models\Invoice;
+use App\Domain\Customer\Customer;
 
 class CreateInvoiceAction
 {
     public function execute(InvoiceData $data, Customer $customer): Invoice
     {
+        if (! $customer->isActive()) {
+            throw new \App\Domain\Customer\InactiveCustomerException();
+        }
+
         return Invoice::create([
             'customer_id' => $customer->id,
             'number' => $data->number,
@@ -668,9 +714,9 @@ class CreateInvoiceAction
 Models can have relationships with models from other domains normally:
 
 ```php
-namespace Domain\Invoices\Models;
+namespace App\Domain\Invoice;
 
-use Domain\Customers\Models\Customer;
+use App\Domain\Customer\Customer;
 
 class Invoice extends Model
 {
@@ -681,55 +727,68 @@ class Invoice extends Model
 }
 ```
 
-### When to Use Events (decoupling)
+### Orchestration (needs the result, must be atomic)
 
-Use domain events when a domain needs to **react** to something from another domain without
-direct coupling. This is especially useful when:
-
-- The reaction is a side effect (notification, log, sync)
-- Multiple domains need to react to the same event
-- The reaction can be asynchronous
+When multiple domains must succeed together, the **app layer** orchestrates:
 
 ```php
-// Domain/Invoices/Events/InvoicePaidEvent.php
-class InvoicePaidEvent
+// app/Http/Controllers/Api/CheckoutController.php
+class CheckoutController
 {
-    public function __construct(public readonly Invoice $invoice) {}
+    public function store(CheckoutRequest $request)
+    {
+        return DB::transaction(function () use ($request) {
+            $invoice = app(CreateInvoiceAction::class)->execute($invoiceData);
+            $payment = app(ProcessPaymentAction::class)->execute($invoice, $paymentData);
+
+            return new CheckoutResource($invoice, $payment);
+        });
+    }
+}
+```
+
+### Events (side effects)
+
+```php
+// Domain A dispatches
+class CreateInvoiceAction
+{
+    public function execute(InvoiceData $data): Invoice
+    {
+        $invoice = Invoice::create([...]);
+        event(new InvoiceCreatedEvent($invoice));
+
+        return $invoice;
+    }
 }
 
-// Domain/Payments/Listeners/ReconcilePaymentListener.php — another domain reacts
+// Domain B reacts via listener — no direct coupling
 class ReconcilePaymentListener
 {
-    public function handle(InvoicePaidEvent $event): void
+    public function handle(InvoiceCreatedEvent $event): void
     {
         app(ReconcilePaymentAction::class)->execute($event->invoice);
     }
 }
 ```
 
-### Circular Dependencies
+### What's Prohibited
 
-If domain A depends on B and B depends on A, you have a design problem. Solutions:
-
-1. **Extract to Shared** — Move the shared logic to `Domain/Shared/`
-2. **Use events** — One domain dispatches the event, the other listens
-3. **Rethink boundaries** — Maybe A and B should be a single domain
+- **Circular dependencies** — If A calls B and B calls A, extract to `Domain/Shared/` or use events
+- **Side effects as direct calls** — If the caller doesn't need the result, use an event
 
 ### Domain/Shared
 
 Use for genuinely cross-cutting concerns:
 
 ```
-src/Domain/Shared/
-├── Actions/
-│   └── LogActivityAction.php
-├── Models/
-│   └── ActivityLog.php
-└── Enums/
-    └── Currency.php
+app/Domain/Shared/
+├── Currency.php
+├── LogActivityAction.php
+└── ActivityLog.php
 ```
 
-Keep `Shared/` small. If it grows too large, it probably has code that should be in its own domain.
+Keep `Shared/` small. If it grows too large, extract into its own domain.
 
 ---
 
@@ -740,8 +799,15 @@ Keep `Shared/` small. If it grows too large, it probably has code that should be
 - Listen to how the business describes the project: "billing", "customer management", "bookings"
 - Each high-level concept becomes a domain
 - Domains can and should change over time — split when they grow too large
-- Use a `Shared` domain for cross-cutting concerns (audit log, etc.) — keep it small
-- Use the `Support` namespace for genuinely generic helpers
+- Use a `Shared` domain for cross-cutting concerns — keep it small
+
+### When to Add Subfolders
+
+| Domain size | Structure |
+|---|---|
+| Up to ~15 files | Flat (all files at domain root) |
+| 15+ files | Subfolders by type (Actions/, Models/, etc.) |
+| 30+ files | Consider splitting into two domains |
 
 ### Real-World Examples
 
@@ -764,8 +830,8 @@ move namespaces quickly.
 ```php
 namespace Tests\Factories;
 
-use Domain\Invoices\Enums\InvoiceStatus;
-use Domain\Invoices\Models\Invoice;
+use App\Domain\Invoice\Invoice;
+use App\Domain\Invoice\InvoiceStatus;
 use Illuminate\Support\Str;
 
 class InvoiceFactory
@@ -829,7 +895,7 @@ $invoiceA = $base->paid()->create();    // paid, expires in June
 $invoiceB = $base->create();            // pending, expires in June (not contaminated)
 ```
 
-### Testing Actions (setup → execute → assert)
+### Testing Actions (setup -> execute -> assert)
 
 ```php
 it('creates an invoice with correct total', function () {
@@ -852,7 +918,7 @@ it('creates an invoice with correct total', function () {
 ```php
 namespace Tests\Mocks;
 
-use Domain\Pdf\Actions\GeneratePdfAction;
+use App\Domain\Pdf\GeneratePdfAction;
 
 class MockGeneratePdfAction extends GeneratePdfAction
 {
@@ -906,7 +972,7 @@ it('cannot mark a cancelled invoice as paid', function () {
     $invoice = InvoiceFactory::new()->cancelled()->create();
 
     app(MarkInvoiceAsPaidAction::class)->execute($invoice);
-})->throws(InvalidInvoiceTransitionException::class);
+})->throws(InvalidTransitionException::class);
 ```
 
 ### Testing QueryBuilders
