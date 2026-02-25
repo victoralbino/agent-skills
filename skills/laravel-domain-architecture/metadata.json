@@ -1,0 +1,9 @@
+{
+  "version": "1.0.0",
+  "date": "February 2026",
+  "abstract": "Domain-oriented architecture for Laravel without external package dependencies, based on Laravel Beyond CRUD (Spatie) concepts. Organizes code by business concepts using Actions, Data Objects, Enums with behavior, ViewModels, and Domain/Application layer separation.",
+  "references": [
+    "https://spatie.be/products/laravel-beyond-crud",
+    "https://laravel.com/docs"
+  ]
+}
