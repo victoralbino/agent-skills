@@ -51,8 +51,6 @@ app/
 │   └── Shared/
 ├── Http/                      # Standard Laravel HTTP layer
 │   ├── Controllers/
-│   │   ├── Api/
-│   │   └── Web/
 │   ├── Requests/
 │   ├── Resources/
 │   ├── Queries/
@@ -65,27 +63,9 @@ app/
 └── Console/
 ```
 
-### Domain Folders Are Flat
+### Domain Folders
 
-Each domain folder contains all its files at the root level. The type is in the class name —
-subfolders are unnecessary until a domain grows beyond ~15 files:
-
-```
-app/Domain/Invoice/
-├── Invoice.php                    # Model
-├── InvoiceLine.php                # Model
-├── InvoiceStatus.php              # Enum
-├── InvoiceData.php                # DTO (only when justified)
-├── CreateInvoiceAction.php        # Action
-├── MarkInvoiceAsPaidAction.php    # Action
-├── CancelInvoiceAction.php        # Action
-├── InvoiceQueryBuilder.php        # Custom QueryBuilder
-├── InvoiceLineCollection.php      # Custom Collection
-├── InvoiceCreatedEvent.php        # Event
-└── InvalidTransitionException.php # Exception
-```
-
-When a domain grows large (15+ files), split into subfolders:
+Each domain is organized into subfolders by type:
 
 ```
 app/Domain/Invoice/
@@ -100,7 +80,14 @@ app/Domain/Invoice/
 │   └── InvoiceStatus.php
 ├── Data/
 │   └── InvoiceData.php
-└── ...
+├── QueryBuilders/
+│   └── InvoiceQueryBuilder.php
+├── Collections/
+│   └── InvoiceLineCollection.php
+├── Events/
+│   └── InvoiceCreatedEvent.php
+└── Exceptions/
+    └── InvalidTransitionException.php
 ```
 
 -> Detailed implementation of each domain block in `references/domain-building-blocks.md`
@@ -109,49 +96,14 @@ app/Domain/Invoice/
 
 ## Application Layer
 
-The application layer uses **standard Laravel structure**. Group by domain within each folder
-only when folders grow too large:
-
-```
-app/Http/Controllers/Api/
-├── InvoiceController.php       # Fine when there are few controllers
-├── CustomerController.php
-└── PaymentController.php
-```
-
-When the project grows:
-
-```
-app/Http/Controllers/Api/
-├── Invoice/
-│   ├── InvoiceController.php
-│   └── InvoiceStatusController.php
-├── Customer/
-│   └── CustomerController.php
-└── Payment/
-    └── PaymentController.php
-```
-
-Same principle applies to Requests, Resources, and Queries.
+The application layer uses **standard Laravel structure**. The internal organization of
+Controllers, Requests, Resources, and Queries is up to the developer — group by domain,
+by feature, or keep flat as the project requires.
 
 ### API Versioning
 
 Only create version folders when the first breaking change happens. While there's
-one version, no prefix needed:
-
-```
-app/Http/Controllers/Api/InvoiceController.php    # Single version — no prefix
-```
-
-When V2 is needed:
-
-```
-app/Http/Controllers/Api/
-├── V1/
-│   └── InvoiceController.php     # Move here only when V2 exists
-└── V2/
-    └── InvoiceController.php
-```
+one version, no prefix needed.
 
 Rules:
 - **Domain layer is shared** — Actions, Models, Enums are the same across V1 and V2
@@ -212,16 +164,19 @@ Domains communicate pragmatically based on the **nature of the interaction**, no
 ### Direct Import (models, enums, preconditions)
 
 ```php
-namespace App\Domain\Invoice;
+namespace App\Domain\Invoice\Actions;
 
-use App\Domain\Customer\Customer;
+use App\Domain\Customer\Exceptions\InactiveCustomerException;
+use App\Domain\Customer\Models\Customer;
+use App\Domain\Invoice\Data\InvoiceData;
+use App\Domain\Invoice\Models\Invoice;
 
 class CreateInvoiceAction
 {
     public function execute(InvoiceData $data, Customer $customer): Invoice
     {
         if (! $customer->isActive()) {
-            throw new \App\Domain\Customer\InactiveCustomerException();
+            throw new InactiveCustomerException();
         }
 
         return Invoice::create([

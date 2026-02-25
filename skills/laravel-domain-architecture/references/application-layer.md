@@ -22,71 +22,18 @@ scope: Controllers, Requests, Resources, HTTP Queries, ViewModels (Blade and API
 ## Application Structure
 
 The application layer uses **standard Laravel structure**. No custom directories, no custom
-namespaces. Group by domain within each folder only when it grows large.
-
-### Starting Structure (small-medium project)
-
-```
-app/Http/
-├── Controllers/
-│   ├── Api/
-│   │   ├── InvoiceController.php
-│   │   ├── CustomerController.php
-│   │   └── PaymentController.php
-│   └── Web/
-│       └── InvoiceController.php
-├── Requests/
-│   ├── StoreInvoiceRequest.php
-│   ├── UpdateInvoiceRequest.php
-│   └── StoreCustomerRequest.php
-├── Resources/
-│   ├── InvoiceResource.php
-│   ├── InvoiceLineResource.php
-│   └── CustomerResource.php
-├── Queries/
-│   └── InvoiceIndexQuery.php
-├── ViewModels/
-│   └── InvoiceDetailViewModel.php
-└── Middleware/
-```
-
-### Grown Structure (large project)
-
-When folders accumulate 15+ files, group by domain:
+namespaces. The internal organization of Controllers, Requests, Resources, and Queries is
+up to the developer — group by domain, by feature, or keep flat as the project requires.
 
 ```
 app/Http/
 ├── Controllers/
-│   ├── Api/
-│   │   ├── Invoice/
-│   │   │   ├── InvoiceController.php
-│   │   │   └── InvoiceStatusController.php
-│   │   ├── Customer/
-│   │   │   └── CustomerController.php
-│   │   └── Payment/
-│   │       └── PaymentController.php
-│   └── Web/
-│       └── InvoiceController.php
 ├── Requests/
-│   ├── Invoice/
-│   │   ├── StoreInvoiceRequest.php
-│   │   └── UpdateInvoiceRequest.php
-│   └── Customer/
-│       └── StoreCustomerRequest.php
 ├── Resources/
-│   ├── Invoice/
-│   │   ├── InvoiceResource.php
-│   │   └── InvoiceLineResource.php
-│   └── Customer/
-│       └── CustomerResource.php
 ├── Queries/
-│   └── InvoiceIndexQuery.php
 ├── ViewModels/
-│   └── InvoiceDetailViewModel.php
 └── Middleware/
 ```
-
-Grouping by domain avoids the problem of having a `Controllers/` directory with 100+ files.
 
 ---
 
@@ -98,11 +45,11 @@ They belong to the app layer because they know about HTTP, but should not contai
 ### Standard Controller
 
 ```php
-namespace App\Http\Controllers\Api;
+namespace App\Http\Controllers;
 
-use App\Domain\Invoice\CreateInvoiceAction;
-use App\Domain\Invoice\Invoice;
-use App\Domain\Invoice\InvoiceData;
+use App\Domain\Invoice\Actions\CreateInvoiceAction;
+use App\Domain\Invoice\Data\InvoiceData;
+use App\Domain\Invoice\Models\Invoice;
 use App\Http\Queries\InvoiceIndexQuery;
 use App\Http\Requests\StoreInvoiceRequest;
 use App\Http\Resources\InvoiceResource;
@@ -138,10 +85,10 @@ class InvoiceController
 For operations that are not CRUD, use invokable controllers:
 
 ```php
-namespace App\Http\Controllers\Api;
+namespace App\Http\Controllers;
 
-use App\Domain\Invoice\Invoice;
-use App\Domain\Invoice\MarkInvoiceAsPaidAction;
+use App\Domain\Invoice\Actions\MarkInvoiceAsPaidAction;
+use App\Domain\Invoice\Models\Invoice;
 use App\Http\Resources\InvoiceResource;
 
 class MarkInvoiceAsPaidController
@@ -183,7 +130,7 @@ No packages — use Eloquent's native `when()`:
 ```php
 namespace App\Http\Queries;
 
-use App\Domain\Invoice\Invoice;
+use App\Domain\Invoice\Models\Invoice;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 
@@ -292,7 +239,7 @@ Use standard Laravel Form Requests:
 ```php
 namespace App\Http\Requests;
 
-use App\Domain\Invoice\Invoice;
+use App\Domain\Invoice\Models\Invoice;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreInvoiceRequest extends FormRequest
@@ -395,8 +342,8 @@ metadata + calculated data). For single-model responses, use Resources directly.
 ```php
 namespace App\Http\ViewModels;
 
-use App\Domain\Invoice\Invoice;
-use App\Domain\Invoice\InvoiceStatus;
+use App\Domain\Invoice\Enums\InvoiceStatus;
+use App\Domain\Invoice\Models\Invoice;
 use App\Http\Resources\InvoiceResource;
 use App\Http\Resources\InvoiceLineResource;
 use App\Models\User;
@@ -475,9 +422,9 @@ For applications with Blade, ViewModels implement `Arrayable` and group everythi
 ```php
 namespace App\Http\ViewModels;
 
-use App\Domain\Customer\Customer;
-use App\Domain\Invoice\Invoice;
-use App\Domain\Invoice\InvoiceStatus;
+use App\Domain\Customer\Models\Customer;
+use App\Domain\Invoice\Enums\InvoiceStatus;
+use App\Domain\Invoice\Models\Invoice;
 use Illuminate\Contracts\Support\Arrayable;
 
 class InvoiceFormViewModel implements Arrayable
@@ -527,8 +474,8 @@ Jobs belong to the app layer because their responsibility is managing queue infr
 ```php
 namespace App\Jobs;
 
-use App\Domain\Invoice\Invoice;
-use App\Domain\Invoice\SendInvoiceMailAction;
+use App\Domain\Invoice\Actions\SendInvoiceMailAction;
+use App\Domain\Invoice\Models\Invoice;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -575,10 +522,6 @@ generic 10-line job is enough.
 
 ### Single Version (no prefix)
 
-```
-app/Http/Controllers/Api/InvoiceController.php
-```
-
 ```php
 // routes/api.php
 Route::apiResource('invoices', InvoiceController::class);
@@ -590,7 +533,7 @@ Only create version folders when the first breaking change happens:
 
 ```
 app/Http/
-├── Controllers/Api/
+├── Controllers/
 │   ├── V1/
 │   │   └── InvoiceController.php
 │   └── V2/
@@ -643,10 +586,10 @@ return Application::configure(basePath: dirname(__DIR__))
 The V2 controller uses the **same domain Actions**, but can have different mapping logic:
 
 ```php
-namespace App\Http\Controllers\Api\V2;
+namespace App\Http\Controllers\V2;
 
-use App\Domain\Invoice\CreateInvoiceAction;
-use App\Domain\Invoice\InvoiceData;
+use App\Domain\Invoice\Actions\CreateInvoiceAction;
+use App\Domain\Invoice\Data\InvoiceData;
 use App\Http\Requests\V2\StoreInvoiceRequest;
 use App\Http\Resources\V2\InvoiceResource;
 
@@ -715,7 +658,7 @@ class InvoiceResource extends JsonResource
 When a component doesn't change between versions, reuse it directly:
 
 ```php
-namespace App\Http\Controllers\Api\V2;
+namespace App\Http\Controllers\V2;
 
 // V2 uses the same Query from before — it didn't change
 use App\Http\Queries\InvoiceIndexQuery;

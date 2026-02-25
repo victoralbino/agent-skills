@@ -45,7 +45,7 @@ For simple CRUD, stick with Laravel defaults.
 
 ### Key Concepts
 
-- **Domain folders** — Flat by default, subfolders only when needed (15+ files)
+- **Domain folders** — Organized into subfolders by type (Actions/, Models/, Enums/, etc.)
 - **Actions** — Classes with `execute()` method for business logic
 - **Data Objects** — Typed DTOs only when justified (multiple sources, reuse across contexts)
 - **Lean Models** — Only relationships, casts, and query builders
@@ -107,7 +107,7 @@ Para CRUD simples, mantenha os padroes do Laravel.
 
 ### Conceitos Principais
 
-- **Pastas de dominio** — Flat por padrao, subpastas so quando necessario (15+ arquivos)
+- **Pastas de dominio** — Organizadas em subpastas por tipo (Actions/, Models/, Enums/, etc.)
 - **Actions** — Classes com metodo `execute()` para logica de negocio
 - **Data Objects** — DTOs tipados so quando justifica (multiplas fontes, reuso entre contextos)
 - **Models enxutos** — Apenas relacionamentos, casts e query builders

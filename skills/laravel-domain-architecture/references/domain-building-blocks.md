@@ -39,8 +39,9 @@ not for every action.
 ### Implementation with Pure PHP
 
 ```php
-namespace App\Domain\Invoice;
+namespace App\Domain\Invoice\Data;
 
+use App\Domain\Invoice\Models\InvoiceLine;
 use Carbon\Carbon;
 
 class InvoiceData
@@ -80,7 +81,7 @@ class InvoiceData
 When all fields are primitive types, the spread works directly:
 
 ```php
-namespace App\Domain\Customer;
+namespace App\Domain\Customer\Data;
 
 class CustomerData
 {
@@ -169,12 +170,16 @@ primary place for business logic in the domain.
 - **One public method**: `execute()` (not `handle` to avoid Laravel auto-injection, not `__invoke` for cleaner composition)
 - **Dependencies**: via constructor (container DI)
 - **Input**: via `execute()` parameters (context-specific data)
-- **Location**: `app/Domain/{DomainName}/`
+- **Location**: `app/Domain/{DomainName}/Actions/`
 
 ### Basic Action
 
 ```php
-namespace App\Domain\Invoice;
+namespace App\Domain\Invoice\Actions;
+
+use App\Domain\Invoice\Data\InvoiceData;
+use App\Domain\Invoice\Enums\InvoiceStatus;
+use App\Domain\Invoice\Models\Invoice;
 
 class CreateInvoiceAction
 {
@@ -205,7 +210,11 @@ class CreateInvoiceAction
 Actions compose via constructor injection. Keep the dependency chain shallow:
 
 ```php
-namespace App\Domain\Invoice;
+namespace App\Domain\Invoice\Actions;
+
+use App\Domain\Invoice\Data\InvoiceLineData;
+use App\Domain\Invoice\Models\Invoice;
+use App\Domain\Invoice\Models\InvoiceLine;
 
 class CreateInvoiceLineAction
 {
@@ -238,8 +247,8 @@ Create a normal job that calls the action:
 // app/Jobs/SendInvoiceMailJob.php
 namespace App\Jobs;
 
-use App\Domain\Invoice\Invoice;
-use App\Domain\Invoice\SendInvoiceMailAction;
+use App\Domain\Invoice\Actions\SendInvoiceMailAction;
+use App\Domain\Invoice\Models\Invoice;
 
 class SendInvoiceMailJob implements ShouldQueue
 {
@@ -267,10 +276,12 @@ Business logic goes elsewhere.
 ### What Belongs in the Model
 
 ```php
-namespace App\Domain\Invoice;
+namespace App\Domain\Invoice\Models;
 
-use App\Domain\Customer\Customer;
-use App\Domain\Payment\Payment;
+use App\Domain\Customer\Models\Customer;
+use App\Domain\Invoice\Enums\InvoiceStatus;
+use App\Domain\Invoice\QueryBuilders\InvoiceQueryBuilder;
+use App\Domain\Payment\Models\Payment;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -328,9 +339,10 @@ class Invoice extends Model
 Extract query scopes into dedicated builder classes. This is a standard Eloquent mechanism:
 
 ```php
-namespace App\Domain\Invoice;
+namespace App\Domain\Invoice\QueryBuilders;
 
-use App\Domain\Customer\Customer;
+use App\Domain\Customer\Models\Customer;
+use App\Domain\Invoice\Enums\InvoiceStatus;
 use Illuminate\Database\Eloquent\Builder;
 
 class InvoiceQueryBuilder extends Builder
@@ -371,8 +383,9 @@ Usage: `Invoice::query()->wherePaid()->whereOverdue()->get()`
 When collection operations are repeated, extract them into a custom class:
 
 ```php
-namespace App\Domain\Invoice;
+namespace App\Domain\Invoice\Collections;
 
+use App\Domain\Invoice\Models\InvoiceLine;
 use Illuminate\Database\Eloquent\Collection;
 
 class InvoiceLineCollection extends Collection
@@ -427,7 +440,7 @@ boilerplate), use PHP 8.3+ enums with methods. Covers 80% of cases with zero ove
 ### Complete Enum
 
 ```php
-namespace App\Domain\Invoice;
+namespace App\Domain\Invoice\Enums;
 
 enum InvoiceStatus: string
 {
@@ -513,7 +526,7 @@ $invoice->status->allowedTransitions(); // [InvoiceStatus::Paid, InvoiceStatus::
 Not every enum needs transitions. Types that never change also benefit:
 
 ```php
-namespace App\Domain\Invoice;
+namespace App\Domain\Invoice\Enums;
 
 enum InvoiceType: string
 {
@@ -547,7 +560,11 @@ Instead of separate `Transition` classes, use normal Actions. A transition is ju
 business operation:
 
 ```php
-namespace App\Domain\Invoice;
+namespace App\Domain\Invoice\Actions;
+
+use App\Domain\Invoice\Enums\InvoiceStatus;
+use App\Domain\Invoice\Exceptions\InvalidTransitionException;
+use App\Domain\Invoice\Models\Invoice;
 
 class MarkInvoiceAsPaidAction
 {
@@ -594,7 +611,9 @@ class CancelInvoiceAction
 ### Transition Exception
 
 ```php
-namespace App\Domain\Invoice;
+namespace App\Domain\Invoice\Exceptions;
+
+use App\Domain\Invoice\Enums\InvoiceStatus;
 
 class InvalidTransitionException extends \DomainException
 {
@@ -619,7 +638,9 @@ is a side effect that shouldn't couple domains.
 ### Custom Event
 
 ```php
-namespace App\Domain\Invoice;
+namespace App\Domain\Invoice\Events;
+
+use App\Domain\Invoice\Models\Invoice;
 
 class InvoiceCreatedEvent
 {
@@ -651,7 +672,7 @@ class CreateInvoiceAction
 // app/Listeners/SendInvoiceCreatedNotification.php
 namespace App\Listeners;
 
-use App\Domain\Invoice\InvoiceCreatedEvent;
+use App\Domain\Invoice\Events\InvoiceCreatedEvent;
 
 class SendInvoiceCreatedNotification
 {
@@ -688,16 +709,19 @@ Domains communicate pragmatically based on the **nature of the interaction**.
 The most common case: one domain uses models or data objects from another directly.
 
 ```php
-namespace App\Domain\Invoice;
+namespace App\Domain\Invoice\Actions;
 
-use App\Domain\Customer\Customer;
+use App\Domain\Customer\Exceptions\InactiveCustomerException;
+use App\Domain\Customer\Models\Customer;
+use App\Domain\Invoice\Data\InvoiceData;
+use App\Domain\Invoice\Models\Invoice;
 
 class CreateInvoiceAction
 {
     public function execute(InvoiceData $data, Customer $customer): Invoice
     {
         if (! $customer->isActive()) {
-            throw new \App\Domain\Customer\InactiveCustomerException();
+            throw new InactiveCustomerException();
         }
 
         return Invoice::create([
@@ -714,9 +738,9 @@ class CreateInvoiceAction
 Models can have relationships with models from other domains normally:
 
 ```php
-namespace App\Domain\Invoice;
+namespace App\Domain\Invoice\Models;
 
-use App\Domain\Customer\Customer;
+use App\Domain\Customer\Models\Customer;
 
 class Invoice extends Model
 {
@@ -783,9 +807,12 @@ Use for genuinely cross-cutting concerns:
 
 ```
 app/Domain/Shared/
-├── Currency.php
-├── LogActivityAction.php
-└── ActivityLog.php
+├── Models/
+│   └── ActivityLog.php
+├── Actions/
+│   └── LogActivityAction.php
+└── Enums/
+    └── Currency.php
 ```
 
 Keep `Shared/` small. If it grows too large, extract into its own domain.
@@ -801,13 +828,23 @@ Keep `Shared/` small. If it grows too large, extract into its own domain.
 - Domains can and should change over time — split when they grow too large
 - Use a `Shared` domain for cross-cutting concerns — keep it small
 
-### When to Add Subfolders
+### Domain Structure
 
-| Domain size | Structure |
-|---|---|
-| Up to ~15 files | Flat (all files at domain root) |
-| 15+ files | Subfolders by type (Actions/, Models/, etc.) |
-| 30+ files | Consider splitting into two domains |
+Every domain uses subfolders organized by type. Only create subfolders that the domain actually needs:
+
+```
+app/Domain/Invoice/
+├── Actions/
+├── Models/
+├── Enums/
+├── Data/
+├── QueryBuilders/
+├── Collections/
+├── Events/
+└── Exceptions/
+```
+
+When a domain grows beyond 30+ files, consider splitting it into two separate domains.
 
 ### Real-World Examples
 
@@ -830,8 +867,8 @@ move namespaces quickly.
 ```php
 namespace Tests\Factories;
 
-use App\Domain\Invoice\Invoice;
-use App\Domain\Invoice\InvoiceStatus;
+use App\Domain\Invoice\Enums\InvoiceStatus;
+use App\Domain\Invoice\Models\Invoice;
 use Illuminate\Support\Str;
 
 class InvoiceFactory
@@ -918,7 +955,7 @@ it('creates an invoice with correct total', function () {
 ```php
 namespace Tests\Mocks;
 
-use App\Domain\Pdf\GeneratePdfAction;
+use App\Domain\Pdf\Actions\GeneratePdfAction;
 
 class MockGeneratePdfAction extends GeneratePdfAction
 {
