@@ -1,0 +1,6 @@
+{
+  "version": "1.0.0",
+  "date": "February 2026",
+  "abstract": "Activity planning skill that conducts a deep technical interview using AskUserQuestion and writes a complete, unambiguous spec file. Accepts an existing plan file or a direct description. Explores the codebase before asking questions to avoid asking what is already known. Adapts to the user's language.",
+  "references": []
+}
