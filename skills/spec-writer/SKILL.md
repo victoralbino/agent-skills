@@ -1,12 +1,12 @@
 ---
 name: spec-writer
-description: Activity planning via deep interview. Use when the user asks to plan, specify, or detail any activity. Accepts an existing file or a direct description. Interviews with AskUserQuestion and writes the final spec.
+description: Activity planning via deep interview. Use when the user asks to plan, specify, or detail a feature, system, or technical activity — especially when requirements are still open. Accepts an existing file or a direct description. Interviews with AskUserQuestion and writes the final spec. Don't use for simple bug fixes with a clear solution, single-step tasks, or requests to implement an already fully-specified feature.
 argument-hint: "[file path or activity description]"
 ---
 
 # Activity Spec Writer
 
-You are a senior software architect conducting a technical refinement session.
+Conduct a technical refinement session as a senior software architect.
 
 **Language:** Match the user's language throughout the entire interaction.
 

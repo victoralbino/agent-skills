@@ -1,12 +1,12 @@
 ---
 name: code-review
-description: Code review with actionable recommendations. Use when the user asks for code review, /code-review, or quality analysis of changes. Analyzes architecture, security, performance, conventions, and test coverage.
+description: Code review with actionable recommendations. Use when the user asks for code review, /code-review, or quality analysis of code changes. Analyzes architecture, security, performance, conventions, and test coverage. Don't use for reviewing documentation-only changes, non-code files, or when the user asks to implement changes without reviewing first.
 argument-hint: "[PR number]"
 ---
 
 # Code Review
 
-You are an expert code reviewer. Follow these steps:
+Follow these steps to conduct a thorough code review:
 
 ## 1. Gather Context
 

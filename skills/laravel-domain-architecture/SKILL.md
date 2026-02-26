@@ -9,12 +9,14 @@ description: >
   Laravel projects beyond simple CRUD. Activate for any mention of "domain layer", "application layer",
   "beyond CRUD", "domain-oriented", or requests to refactor a Laravel project into domain structure.
   Even if the user asks "how to organize a large Laravel project", this skill is relevant.
+  Don't use for non-Laravel PHP frameworks (Symfony, CodeIgniter), simple CRUD projects where
+  Laravel defaults are sufficient, or projects that don't use Eloquent.
 ---
 
 # Laravel Domain Architecture
 
-Guide for creating and refactoring Laravel applications using a pragmatic domain-oriented architecture.
-Based on patterns from "Laravel Beyond CRUD" (Brent Roose / Spatie), **simplified to work with pure PHP
+Apply a pragmatic domain-oriented architecture to Laravel applications.
+Use patterns from "Laravel Beyond CRUD" (Brent Roose / Spatie), **simplified to work with pure PHP
 and native Laravel features — no mandatory external packages**.
 
 Core philosophy: **group code by business meaning, not by technical property. Don't fight the framework.**
