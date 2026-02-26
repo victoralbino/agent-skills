@@ -25,6 +25,7 @@ skills/
 
 - **[laravel-domain-architecture](skills/laravel-domain-architecture/)** — Domain-oriented architecture for Laravel based on "Laravel Beyond CRUD" (Spatie)
 - **[spec-writer](skills/spec-writer/)** — Activity planning via deep interview: explores the codebase, asks non-obvious questions, and writes a complete spec
+- **[code-review](skills/code-review/)** — Code review with actionable recommendations: analyzes PRs or local changes, categorizes findings by severity, and applies approved fixes
 
 ### Installation
 
@@ -62,6 +63,7 @@ skills/
 
 - **[laravel-domain-architecture](skills/laravel-domain-architecture/)** — Arquitetura orientada a domínios para Laravel baseada em "Laravel Beyond CRUD" (Spatie)
 - **[spec-writer](skills/spec-writer/)** — Planejamento de atividades via entrevista profunda: explora o codebase, faz perguntas não-óbvias e escreve uma spec completa
+- **[code-review](skills/code-review/)** — Code review com recomendações acionáveis: analisa PRs ou mudanças locais, categoriza achados por severidade e aplica as correções aprovadas
 
 ### Instalação
 

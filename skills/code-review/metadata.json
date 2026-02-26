@@ -1,0 +1,6 @@
+{
+  "version": "1.0.0",
+  "date": "February 2026",
+  "abstract": "Code review skill that analyzes PRs or local changes across architecture, security, performance, and test coverage. Categorizes findings by severity (Critical, Important, Minor), lets the user decide which fixes to apply via AskUserQuestion, then implements the approved changes and runs the formatter.",
+  "references": []
+}
